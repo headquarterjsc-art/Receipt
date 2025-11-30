@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบออกใบรับเงิน (Clean Print & Header)</title>
+    <title>ระบบออกใบรับเงิน (Auto Sync)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
@@ -48,25 +48,17 @@
         .date-icon-emoji { font-size: 20px; }
         .invisible-date-input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 
-        /* Dropdown Helper (ลูกศรเลือกรายชื่อ) */
+        /* Dropdown Helper */
         .select-helper {
             width: 20px; border: none; background: transparent; cursor: pointer; color: #666; font-size: 12px;
             margin-left: -5px; height: 30px; vertical-align: middle;
         }
         .select-helper:focus { outline: none; }
 
-        /* Hidden Span for Measuring Text Width */
         #measure_span {
             visibility: hidden; white-space: pre; font-family: 'Sarabun', sans-serif; font-size: 16px; position: absolute; top: -9999px;
         }
         
-        /* Loading Overlay */
-        #loadingOverlay {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;
-            color: white; font-size: 20px; flex-direction: column;
-        }
-
         /* Print Styles */
         @media print {
             @page { size: A4; margin: 0; }
@@ -90,11 +82,6 @@
 <body>
     <span id="measure_span"></span>
     
-    <div id="loadingOverlay">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white mb-4"></div>
-        กำลังบันทึกข้อมูล...
-    </div>
-
     <div class="min-h-screen bg-gray-100 py-8 print:bg-white print:py-0">
         
         <div class="no-print max-w-[210mm] mx-auto mb-4 flex justify-between items-center px-4">
@@ -166,19 +153,12 @@
 
                 <div class="form-row">
                     <span class="form-label">จาก</span>
-                    <div style="display: flex; align-items: center;">
+                    <div style="display: flex; align-items: center; flex: 1;">
                         <input type="text" id="receiver_name" class="form-input" 
                                autocomplete="off"
+                               placeholder="ระบุชื่อบริษัท/ผู้รับเงิน"
                                oninput="autoResize(this)"
-                               style="min-width: 250px; width: 250px;"> 
-                               
-                        <select class="select-helper no-print" onchange="pickCompany(this)" title="เลือกจากรายชื่อ">
-                            <option value="" disabled selected>▼</option>
-                            <option value="บริษัท จิรัฏสิริ คอนสตรัคชั่น จำกัด">บริษัท จิรัฏสิริ คอนสตรัคชั่น จำกัด</option>
-                            <option value="บริษัท เมืองแสนสุข จำกัด">บริษัท เมืองแสนสุข จำกัด</option>
-                            <option value="บริษัท อินทิสดอม จำกัด">บริษัท อินทิสดอม จำกัด</option>
-                            <option value="บริษัท ยูโฮม จำกัด">บริษัท ยูโฮม จำกัด</option>
-                        </select>
+                               style="min-width: 250px; width: 100%;"> 
                     </div>
                     <span class="form-label">ไว้เป็นที่เรียบร้อยแล้ว</span>
                 </div>
@@ -241,7 +221,7 @@
                     <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-bold shadow-lg transition transform hover:scale-105 flex items-center justify-center mx-auto gap-2">
                         <span>💾</span> บันทึกข้อมูล
                     </button>
-                    <p class="text-xs text-gray-500 mt-2">* ระบบจะบันทึกข้อมูลลูกค้าเก็บไว้ใช้ครั้งหน้าอัตโนมัติ</p>
+                    <p class="text-xs text-gray-500 mt-2">* บันทึกแล้วระบบจะจำชื่อลูกค้าให้อัตโนมัติ (ลบประวัติ = ลบชื่อลูกค้า)</p>
                 </div>
             </form>
         </div>
@@ -250,7 +230,7 @@
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-xl font-bold text-gray-800">ประวัติการบันทึก</h3>
                 <div class="space-x-4 text-sm">
-                    <button onclick="clearHistoryWithConfirm()" class="text-red-500 hover:text-red-700 hover:underline font-bold">🗑️ ล้างประวัติรายการทั้งหมด</button>
+                    <button onclick="clearHistoryWithConfirm()" class="text-red-500 hover:text-red-700 hover:underline font-bold">🗑️ ล้างประวัติทั้งหมด</button>
                 </div>
             </div>
             <div id="historyList" class="space-y-3"></div>
@@ -258,63 +238,39 @@
     </div>
 
     <script>
-        // ==========================================
-        // 🔴 นำ URL จาก Google Apps Script มาวางตรงนี้
-        const GOOGLE_SCRIPT_URL = 'VANG_URL_TEE_NEE'; 
-        // ==========================================
-
         document.addEventListener('DOMContentLoaded', () => {
-            const picker = document.getElementById('receipt_date_picker');
-            // แก้ไข: ไม่ต้องตั้งค่าวันที่อัตโนมัติ ให้เป็นช่องว่างไว้
-            // picker.valueAsDate = new Date();
-            // updateThaiDate();
-            
             loadHistory();
             loadSavedCustomers();
+            loadLastReceiver();
             autoResize(document.getElementById('receiver_name'));
-            
-            // ตั้งค่าเริ่มต้นให้ซ่อนคำอ่านตัวเลข (เพราะยังไม่มีข้อมูล)
             updateBahtTextFromInput(document.getElementById('amount'));
         });
 
-        // --- Auto Resize Logic ---
+        // --- Auto Resize ---
         function autoResize(input) {
             const span = document.getElementById('measure_span');
             span.innerHTML = input.value;
-            const newWidth = span.offsetWidth + 30;
-            input.style.width = newWidth + 'px';
+            input.style.width = Math.max(span.offsetWidth + 30, 250) + 'px'; 
         }
 
-        function pickCompany(selectElement) {
-            const input = document.getElementById('receiver_name');
-            input.value = selectElement.value;
-            selectElement.selectedIndex = 0;
-            autoResize(input);
-        }
-
-        // --- Date Logic (หัวกระดาษ) ---
+        // --- Date Logic ---
         function updateThaiDate() {
             const picker = document.getElementById('receipt_date_picker');
-            const textDisplay = document.getElementById('receipt_date_text');
             if(picker.value) {
                 const date = new Date(picker.value);
-                const thaiDate = date.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
-                textDisplay.value = thaiDate;
-            } else { textDisplay.value = ""; }
+                document.getElementById('receipt_date_text').value = date.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+            }
         }
 
-        // --- New Date Logic (วันที่เช็ค) ---
         function updateCheckThaiDate() {
             const picker = document.getElementById('check_date_picker');
-            const textDisplay = document.getElementById('check_date_text');
             if(picker.value) {
                 const date = new Date(picker.value);
-                const thaiDate = date.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
-                textDisplay.value = thaiDate;
-            } else { textDisplay.value = ""; }
+                document.getElementById('check_date_text').value = date.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+            }
         }
 
-        // --- Common Logic ---
+        // --- Form Helpers ---
         function formatIDCard(input) {
             let value = input.value.replace(/\D/g, '');
             let formatted = '';
@@ -336,47 +292,51 @@
         function validateNumber(input) { input.value = input.value.replace(/[^0-9.]/g, ''); }
         function cleanCurrency(input) { input.value = input.value.replace(/,/g, ''); }
         function formatCurrency(input) {
-            let valStr = input.value.replace(/,/g, '');
-            let val = parseFloat(valStr);
+            let val = parseFloat(input.value.replace(/,/g, ''));
             if (isNaN(val)) { input.value = ''; return; }
             input.value = val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
         
-        // ฟังก์ชันคำนวณและจัดการการแสดงผลคำอ่านตัวเลข
         function updateBahtTextFromInput(input) {
             let valStr = input.value.replace(/,/g, '');
             const displayEl = document.getElementById('baht_text_display');
-            
             if(valStr) {
-                const text = ArabicNumberToText(valStr);
-                displayEl.textContent = `(${text})`;
-                // ถ้ามีข้อมูล ให้ลบ class no-print ออก (เพื่อให้พิมพ์ติด)
+                displayEl.textContent = `(${ArabicNumberToText(valStr)})`;
                 displayEl.classList.remove('no-print');
             } else { 
                 displayEl.textContent = '(.........)';
-                // ถ้าไม่มีข้อมูล ให้ใส่ class no-print (เพื่อซ่อนตอนพิมพ์)
                 displayEl.classList.add('no-print');
             }
         }
 
         // ============================================
-        // 🚀 CUSTOMER MEMORY SYSTEM
+        // 🔄 CUSTOMER SYNC LOGIC (หัวใจสำคัญใหม่)
         // ============================================
         
-        function saveCustomerToLocalDB(name, addressData) {
-            if(!name) return;
-            let customers = JSON.parse(localStorage.getItem('savedCustomers_v1') || '[]');
-            customers = customers.filter(c => c.name !== name);
-            customers.unshift({
-                name: name,
-                address: addressData.address,
-                subdistrict: addressData.subdistrict,
-                district: addressData.district,
-                province: addressData.province,
-                idCard: addressData.idCard
+        // ฟังก์ชั่นนี้จะสร้างรายชื่อลูกค้าใน Dropdown ใหม่ทั้งหมด โดยดูจาก History เท่านั้น
+        // ทำให้เมื่อลบ History รายชื่อลูกค้าที่ผูกกับ History นั้นจะหายไปด้วย
+        function rebuildCustomersFromHistory() {
+            const history = JSON.parse(localStorage.getItem('myReceipts_v10') || '[]');
+            const uniqueCustomers = {};
+
+            // วนลูป History เพื่อดึงรายชื่อที่ไม่ซ้ำ
+            history.forEach(item => {
+                // เราใช้ชื่อเป็น Key (ถ้าชื่อซ้ำ จะยึดข้อมูลล่าสุดที่เจอ)
+                if (!uniqueCustomers[item.name]) {
+                    uniqueCustomers[item.name] = {
+                        name: item.name,
+                        address: item.address,
+                        subdistrict: item.subdistrict, // ต้องมีข้อมูลย่อยเหล่านี้ใน history
+                        district: item.district,
+                        province: item.province,
+                        idCard: item.idCard
+                    };
+                }
             });
-            localStorage.setItem('savedCustomers_v1', JSON.stringify(customers));
-            loadSavedCustomers();
+
+            const customerArray = Object.values(uniqueCustomers);
+            localStorage.setItem('savedCustomers_v1', JSON.stringify(customerArray));
+            loadSavedCustomers(); // อัปเดต Dropdown ทันที
         }
 
         function loadSavedCustomers() {
@@ -402,7 +362,6 @@
             const name = input.value;
             const customers = JSON.parse(localStorage.getItem('savedCustomers_v1') || '[]');
             const found = customers.find(c => c.name === name);
-
             if (found) {
                 document.getElementById('address').value = found.address || '';
                 document.getElementById('subdistrict').value = found.subdistrict || '';
@@ -412,14 +371,28 @@
             }
         }
 
+        function saveReceiverToLocal(name) {
+            if(name) localStorage.setItem('lastReceiver_v1', name);
+        }
+
+        function loadLastReceiver() {
+            const lastReceiver = localStorage.getItem('lastReceiver_v1');
+            if (lastReceiver) {
+                const input = document.getElementById('receiver_name');
+                input.value = lastReceiver;
+                autoResize(input);
+            }
+        }
+
         // ============================================
-        // 💾 SAVE DATA
+        // 💾 SAVE & DELETE DATA
         // ============================================
 
         function saveData(e) {
             e.preventDefault();
             const rawAmount = document.getElementById('amount').value.replace(/,/g, '');
             const name = document.getElementById('full_name').value;
+            const receiver = document.getElementById('receiver_name').value;
             
             if (!rawAmount) { alert('กรุณาระบุจำนวนเงิน'); return; }
             if (!name) { alert('กรุณาระบุชื่อผู้จ่ายเงิน'); return; }
@@ -434,92 +407,90 @@
             const idCard = document.getElementById('id_card').value;
             const fullAddress = `${addr} ${sub ? 'ต.'+sub : ''} ${dist ? 'อ.'+dist : ''} ${prov ? 'จ.'+prov : ''}`;
 
-            saveCustomerToLocalDB(name, {
-                address: addr, subdistrict: sub, district: dist, province: prov, idCard: idCard
-            });
-
-            const checkDate = document.getElementById('check_date_text').value || '';
-            const checkNumber = document.getElementById('check_number').value || '';
-            const bankName = document.getElementById('bank_name').value || '';
-            const bankBranch = document.getElementById('bank_branch').value || '';
+            saveReceiverToLocal(receiver);
 
             const data = {
                 id: Date.now(),
                 date: document.getElementById('receipt_date_text').value,
                 name: name,
+                // --- จุดสำคัญ: ต้องบันทึกที่อยู่แบบแยกส่วนลง History ด้วย เพื่อใช้กู้คืนรายชื่อ ---
                 address: addr,
+                subdistrict: sub,
+                district: dist,
+                province: prov,
                 fullAddress: fullAddress, 
                 idCard: idCard,
+                // -----------------------------------------------------------------------
                 paymentFor: document.getElementById('payment_for').value,
                 amount: rawAmount,
                 type: paymentType,
                 checkDetails: {
-                    bank: bankName, branch: bankBranch, number: checkNumber, date: checkDate
+                    bank: document.getElementById('bank_name').value, 
+                    branch: document.getElementById('bank_branch').value, 
+                    number: document.getElementById('check_number').value, 
+                    date: document.getElementById('check_date_text').value
                 },
-                receiver: document.getElementById('receiver_name').value
+                receiver: receiver
             };
 
-            document.getElementById('loadingOverlay').style.display = 'flex';
-
-            if(GOOGLE_SCRIPT_URL === 'VANG_URL_TEE_NEE' || GOOGLE_SCRIPT_URL === '') {
-                setTimeout(() => {
-                    saveToLocalHistory(data);
-                    document.getElementById('loadingOverlay').style.display = 'none';
-                    alert('✅ บันทึกข้อมูลลงเครื่องเรียบร้อย (ยังไม่ได้เชื่อม Google Sheet)');
-                    loadHistory();
-                }, 800);
-            } else {
-                fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                })
-                .then(() => {
-                    saveToLocalHistory(data);
-                    alert('✅ บันทึกข้อมูลสมบูรณ์ (ลง Google Sheet + เครื่อง)');
-                    document.getElementById('loadingOverlay').style.display = 'none';
-                    loadHistory();
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    saveToLocalHistory(data);
-                    alert('⚠️ Google Sheet ขัดข้อง บันทึกลงเครื่องให้แทน');
-                    document.getElementById('loadingOverlay').style.display = 'none';
-                    loadHistory();
-                });
-            }
-        }
-
-        function saveToLocalHistory(data) {
+            // 1. บันทึกลง History
             let history = JSON.parse(localStorage.getItem('myReceipts_v10') || '[]');
             history.unshift(data);
             localStorage.setItem('myReceipts_v10', JSON.stringify(history));
+
+            // 2. สั่ง Sync รายชื่อลูกค้าใหม่ทันที (เพื่อให้ชื่อใหม่ไปโผล่ใน Dropdown)
+            rebuildCustomersFromHistory();
+
+            alert('✅ บันทึกข้อมูลเรียบร้อย');
+            loadHistory();
         }
 
         function loadHistory() {
             const history = JSON.parse(localStorage.getItem('myReceipts_v10') || '[]');
             const container = document.getElementById('historyList');
             if (history.length === 0) { container.innerHTML = '<p class="text-gray-400 text-center">ยังไม่มีประวัติ</p>'; return; }
+            
             container.innerHTML = history.map(item => `
-                <div class="bg-white p-4 rounded shadow border-l-4 border-green-500 flex justify-between items-center">
+                <div class="bg-white p-4 rounded shadow border-l-4 border-green-500 flex justify-between items-center relative group">
                     <div>
                         <div class="font-bold text-gray-800">${item.name}</div>
                         <div class="text-sm text-gray-600">${item.date} | ${item.type}</div>
                         <div class="text-xs text-gray-500 mt-1">รายการ: ${item.paymentFor || '-'}</div>
                     </div>
-                    <div class="text-right">
+                    <div class="flex flex-col items-end gap-2">
                         <div class="font-bold text-lg text-green-600">${parseFloat(item.amount).toLocaleString()} บ.</div>
+                        <button onclick="deleteSingleHistory(${item.id})" class="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 px-2 py-1 rounded text-xs transition border border-red-200">
+                            ❌ ลบ
+                        </button>
                     </div>
                 </div>
             `).join('');
         }
 
-        function clearHistoryWithConfirm() {
-            if(confirm('⚠️ คำเตือน: คุณต้องการล้าง "ประวัติรายการทั้งหมด" ด้านล่างนี้ใช่หรือไม่?\n\n(ข้อมูลลูกค้าที่จำไว้ในช่องพิมพ์ชื่อ จะยังคงอยู่)')) {
-                localStorage.removeItem('myReceipts_v10');
+        // ลบรายการเดียว -> แล้ว Sync รายชื่อใหม่
+        function deleteSingleHistory(id) {
+            if(confirm('ยืนยันที่จะลบรายการนี้? (หากลบแล้ว รายชื่อนี้ไม่มีประวัติเหลืออยู่ จะหายไปจากตัวเลือกด้วย)')) {
+                let history = JSON.parse(localStorage.getItem('myReceipts_v10') || '[]');
+                history = history.filter(item => item.id !== id); // เอาเฉพาะที่ไม่ตรงกับ ID นี้
+                localStorage.setItem('myReceipts_v10', JSON.stringify(history));
+                
+                // *** จุดสำคัญ: สร้าง Dropdown ใหม่จาก History ที่เหลือ ***
+                rebuildCustomersFromHistory();
+                
                 loadHistory();
-                alert('✅ ล้างประวัติรายการเรียบร้อยแล้ว');
+            }
+        }
+
+        // ลบทั้งหมด -> ลบรายชื่อทั้งหมดด้วย
+        function clearHistoryWithConfirm() {
+            if(confirm('⚠️ คำเตือน: ล้าง "ประวัติรายการทั้งหมด"?\n(รายชื่อลูกค้าในตัวเลือกจะถูกลบทั้งหมดด้วย)')) {
+                localStorage.removeItem('myReceipts_v10');     // ลบประวัติ
+                localStorage.removeItem('savedCustomers_v1');  // ลบรายชื่อที่จำไว้
+                
+                loadHistory();       // เคลียร์รายการหน้าจอ
+                loadSavedCustomers(); // เคลียร์ Dropdown
+                
+                alert('✅ ล้างข้อมูลทั้งหมดเรียบร้อย');
             }
         }
 
