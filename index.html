@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบออกใบรับเงิน (Final Fix)</title>
+    <title>ระบบออกใบรับเงิน (Clean Print & Header)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
@@ -48,31 +48,52 @@
         .date-icon-emoji { font-size: 20px; }
         .invisible-date-input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 
-        /* Company Dropdown Helper */
-        .company-select-helper {
+        /* Dropdown Helper (ลูกศรเลือกรายชื่อ) */
+        .select-helper {
             width: 20px; border: none; background: transparent; cursor: pointer; color: #666; font-size: 12px;
-            margin-left: -5px;
+            margin-left: -5px; height: 30px; vertical-align: middle;
         }
-        .company-select-helper:focus { outline: none; }
+        .select-helper:focus { outline: none; }
 
         /* Hidden Span for Measuring Text Width */
         #measure_span {
             visibility: hidden; white-space: pre; font-family: 'Sarabun', sans-serif; font-size: 16px; position: absolute; top: -9999px;
         }
+        
+        /* Loading Overlay */
+        #loadingOverlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;
+            color: white; font-size: 20px; flex-direction: column;
+        }
 
         /* Print Styles */
         @media print {
-            body { background: white; padding: 0; }
-            .no-print { display: none !important; }
-            .screen-wrapper { width: 100%; margin: 0; box-shadow: none; padding: 0; }
+            @page { size: A4; margin: 0; }
+            body { background: white; padding: 0; margin: 0; }
+            body * { visibility: hidden; }
+            
+            .screen-wrapper, .screen-wrapper * { visibility: visible; }
+
+            .screen-wrapper { 
+                width: 100%; margin: 0; box-shadow: none; padding: 2.54cm; 
+                position: absolute; top: 0; left: 0; height: auto; min-height: auto; overflow: hidden;
+            }
+
+            .no-print, .no-print-bg { display: none !important; }
             .form-input { border-bottom: 1px dotted #000; }
             ::placeholder { color: transparent; }
-            .date-icon-wrapper, .company-select-helper { display: none !important; }
+            .date-icon-wrapper, .select-helper { display: none !important; }
         }
     </style>
 </head>
 <body>
     <span id="measure_span"></span>
+    
+    <div id="loadingOverlay">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white mb-4"></div>
+        กำลังบันทึกข้อมูล...
+    </div>
 
     <div class="min-h-screen bg-gray-100 py-8 print:bg-white print:py-0">
         
@@ -87,11 +108,11 @@
         <div class="screen-wrapper">
             <h1 style="text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 30px;">ใบรับเงิน</h1>
             
-            <form id="receiptForm" onsubmit="saveReceipt(event)">
+            <form id="receiptForm" onsubmit="saveData(event)">
                 
                 <div style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 20px;">
                     <span class="form-label">วันที่</span>
-                    <input type="text" id="receipt_date_text" class="form-input" style="width: 200px; text-align: center; flex: none;" readonly placeholder="-- เลือกวันที่ --">
+                    <input type="text" id="receipt_date_text" class="form-input" style="width: 200px; text-align: center; flex: none;" readonly>
                     <div class="date-icon-wrapper no-print" title="คลิกเพื่อเลือกวันที่">
                         <span class="date-icon-emoji">📅</span>
                         <input type="date" id="receipt_date_picker" class="invisible-date-input" onchange="updateThaiDate()">
@@ -100,11 +121,22 @@
 
                 <div class="form-row">
                     <span class="form-label">ข้าพเจ้า</span> 
-                    <input type="text" id="full_name" class="form-input" placeholder="ชื่อ-นามสกุล" style="flex: 1;">
+                    
+                    <div style="display: flex; align-items: center; flex: 1;">
+                        <input type="text" id="full_name" class="form-input" 
+                               oninput="checkAndFillCustomer(this)"
+                               autocomplete="off"
+                               style="width: 100%; font-weight: bold; color: #000;">
+                        
+                        <select id="customer_select_helper" class="select-helper no-print" onchange="pickCustomerFromSelect(this)" title="เลือกรายชื่อเดิม">
+                            <option value="" disabled selected>▼</option>
+                            </select>
+                    </div>
                 </div>
+
                 <div class="form-row">
                     <span class="form-label">ที่อยู่</span> 
-                    <input type="text" id="address" class="form-input" placeholder="บ้านเลขที่ หมู่ ซอย ถนน..." style="flex: 1;">
+                    <input type="text" id="address" class="form-input" style="flex: 1;">
                 </div>
                 <div class="form-row">
                     <span class="form-label">ตำบล/แขวง</span> <input type="text" id="subdistrict" class="form-input" style="flex: 1;">
@@ -113,35 +145,34 @@
                 <div class="form-row">
                     <span class="form-label">จังหวัด</span> <input type="text" id="province" class="form-input" style="flex: 1;">
                     <span class="form-label">เลขบัตรประจำตัวประชาชน</span> 
-                    <input type="text" id="id_card" class="form-input" maxlength="17" placeholder="x-xxxx-xxxxx-xx-x" oninput="formatIDCard(this)" style="flex: 1;">
+                    <input type="text" id="id_card" class="form-input" maxlength="17" oninput="formatIDCard(this)" style="flex: 1;">
                 </div>
 
                 <div class="form-row" style="margin-top: 20px;">
                     <span class="form-label">ได้รับเงินเพื่อชำระค่า</span> 
-                    <input type="text" id="payment_for" class="form-input" placeholder="ระบุรายการ..." style="flex: 1;">
+                    <input type="text" id="payment_for" class="form-input" style="flex: 1;">
                 </div>
 
                 <div class="form-row">
                     <span class="form-label">จำนวนเงิน</span> 
-                    <input type="text" id="amount" class="form-input" placeholder="0.00" style="max-width: 150px; text-align: right;" 
+                    <input type="text" id="amount" class="form-input" style="max-width: 150px; text-align: right;" 
                            oninput="validateNumber(this)" 
                            onblur="formatCurrency(this); updateBahtTextFromInput(this);" 
                            onfocus="cleanCurrency(this)">
                     <span class="form-label">บาท</span>
-                    <span id="baht_text_display" style="color: #666; font-style: italic; margin-left: 10px;">(.........)</span>
+                    
+                    <span id="baht_text_display" style="color: #666; font-style: italic; margin-left: 10px;" class="no-print">(.........)</span>
                 </div>
 
                 <div class="form-row">
                     <span class="form-label">จาก</span>
-                    
                     <div style="display: flex; align-items: center;">
                         <input type="text" id="receiver_name" class="form-input" 
-                               placeholder="ระบุชื่อผู้รับเงิน/บริษัท..." 
                                autocomplete="off"
                                oninput="autoResize(this)"
                                style="min-width: 250px; width: 250px;"> 
                                
-                        <select class="company-select-helper no-print" onchange="pickCompany(this)" title="คลิกเพื่อเลือกจากรายชื่อ">
+                        <select class="select-helper no-print" onchange="pickCompany(this)" title="เลือกจากรายชื่อ">
                             <option value="" disabled selected>▼</option>
                             <option value="บริษัท จิรัฏสิริ คอนสตรัคชั่น จำกัด">บริษัท จิรัฏสิริ คอนสตรัคชั่น จำกัด</option>
                             <option value="บริษัท เมืองแสนสุข จำกัด">บริษัท เมืองแสนสุข จำกัด</option>
@@ -149,35 +180,53 @@
                             <option value="บริษัท ยูโฮม จำกัด">บริษัท ยูโฮม จำกัด</option>
                         </select>
                     </div>
-
                     <span class="form-label">ไว้เป็นที่เรียบร้อยแล้ว</span>
                 </div>
 
-                <div class="form-row" style="margin-top: 20px;">
-                    <span class="form-label">โดยชำระเป็น</span>
-                    <div class="checkbox-group" style="display: flex; gap: 2rem;">
-                        <label style="margin-right: 20px; cursor: pointer;">
+                <div style="margin-top: 20px;">
+                    
+                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                        <span class="form-label" style="width: 100px; flex-shrink: 0;">โดยชำระเป็น</span>
+                        <label style="cursor: pointer; display: flex; align-items: center; margin-left: 10px;">
                             <input type="checkbox" name="payment_type" value="เงินสด" class="custom-checkbox" onclick="handlePaymentCheck(this)">
                             <span class="check-box-display"></span> เงินสด
                         </label>
-                        <label style="cursor: pointer;">
+                    </div>
+
+                    <div style="display: flex; align-items: center; margin-bottom: 8px; width: 100%;">
+                        <span style="width: 100px; flex-shrink: 0;"></span> <label style="cursor: pointer; display: flex; align-items: center; margin-left: 10px; width: 60px; flex-shrink: 0;">
                             <input type="checkbox" name="payment_type" value="เช็ค" class="custom-checkbox" onclick="handlePaymentCheck(this)">
                             <span class="check-box-display"></span> เช็ค
                         </label>
-                    </div>
-                </div>
 
-                <div id="checkDetails" style="display: none; margin-left: 20px; padding: 10px; background: #f9f9f9; border-radius: 5px;" class="no-print-bg">
-                    <div class="form-row">
-                        <span class="form-label">ธนาคาร</span> <input type="text" id="bank_name" class="form-input" style="flex: 1;">
-                        <span class="form-label">สาขา</span> <input type="text" id="bank_branch" class="form-input" style="flex: 1;">
+                        <span class="form-label" style="margin-right: 5px;">ธนาคาร</span> 
+                        <input type="text" id="bank_name" class="form-input" style="flex: 1; margin-right: 15px; min-width: 50px;">
+                        
+                        <div style="display: flex; align-items: center; width: 220px; flex-shrink: 0;">
+                            <span class="form-label" style="width: 60px;">สาขา</span> 
+                            <input type="text" id="bank_branch" class="form-input" style="flex: 1;">
+                        </div>
                     </div>
-                    <div class="form-row">
-                        <span class="form-label">เลขที่เช็ค</span> <input type="text" id="check_number" class="form-input" style="flex: 1;">
-                        <span class="form-label">ลงวันที่</span> <input type="date" id="check_date" class="form-input" style="flex: 1;">
-                    </div>
-                </div>
 
+                    <div style="display: flex; align-items: center; width: 100%;">
+                        <span style="width: 100px; flex-shrink: 0;"></span> <span style="width: 70px; flex-shrink: 0;"></span>  <span class="form-label" style="margin-right: 5px; width: 45px;">เลขที่</span> 
+                        <input type="text" id="check_number" class="form-input" style="flex: 1; margin-right: 15px; min-width: 50px;">
+                        
+                        <div style="display: flex; align-items: center; width: 220px; flex-shrink: 0;">
+                            <span class="form-label" style="width: 60px;">ลงวันที่</span> 
+                            <div style="flex: 1; display: flex; align-items: center; border-bottom: 1px dotted #333;">
+                                <input type="text" id="check_date_text" 
+                                       style="border: none; outline: none; background: transparent; width: 100%; text-align: center; font-size: 16px;" 
+                                       readonly>
+                                <div class="date-icon-wrapper no-print" title="เลือกวันที่" style="width: 25px;">
+                                    <span class="date-icon-emoji" style="font-size: 16px;">📅</span>
+                                    <input type="date" id="check_date_picker" class="invisible-date-input" onchange="updateCheckThaiDate()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
                 <div style="margin-top: 50px; text-align: right; padding-right: 10px;">
                     <div style="display: inline-block; text-align: center; width: 250px;">
                         <div style="border-bottom: 1px dotted #333; height: 30px; margin-bottom: 5px;"></div>
@@ -189,9 +238,10 @@
                 </div>
 
                 <div class="no-print mt-10 text-center border-t pt-6">
-                    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-bold shadow-lg transition transform hover:scale-105">
-                        💾 บันทึกรายการ
+                    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-bold shadow-lg transition transform hover:scale-105 flex items-center justify-center mx-auto gap-2">
+                        <span>💾</span> บันทึกข้อมูล
                     </button>
+                    <p class="text-xs text-gray-500 mt-2">* ระบบจะบันทึกข้อมูลลูกค้าเก็บไว้ใช้ครั้งหน้าอัตโนมัติ</p>
                 </div>
             </form>
         </div>
@@ -199,30 +249,42 @@
         <div class="no-print max-w-[210mm] mx-auto mt-8 px-4">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-xl font-bold text-gray-800">ประวัติการบันทึก</h3>
-                <button onclick="clearHistory()" class="text-red-500 hover:text-red-700 text-sm underline">ลบประวัติทั้งหมด</button>
+                <div class="space-x-4 text-sm">
+                    <button onclick="clearHistoryWithConfirm()" class="text-red-500 hover:text-red-700 hover:underline font-bold">🗑️ ล้างประวัติรายการทั้งหมด</button>
+                </div>
             </div>
             <div id="historyList" class="space-y-3"></div>
         </div>
     </div>
 
     <script>
+        // ==========================================
+        // 🔴 นำ URL จาก Google Apps Script มาวางตรงนี้
+        const GOOGLE_SCRIPT_URL = 'VANG_URL_TEE_NEE'; 
+        // ==========================================
+
         document.addEventListener('DOMContentLoaded', () => {
             const picker = document.getElementById('receipt_date_picker');
-            picker.valueAsDate = new Date();
-            updateThaiDate();
+            // แก้ไข: ไม่ต้องตั้งค่าวันที่อัตโนมัติ ให้เป็นช่องว่างไว้
+            // picker.valueAsDate = new Date();
+            // updateThaiDate();
+            
             loadHistory();
+            loadSavedCustomers();
             autoResize(document.getElementById('receiver_name'));
+            
+            // ตั้งค่าเริ่มต้นให้ซ่อนคำอ่านตัวเลข (เพราะยังไม่มีข้อมูล)
+            updateBahtTextFromInput(document.getElementById('amount'));
         });
 
         // --- Auto Resize Logic ---
         function autoResize(input) {
             const span = document.getElementById('measure_span');
-            span.innerHTML = input.value || input.placeholder;
+            span.innerHTML = input.value;
             const newWidth = span.offsetWidth + 30;
             input.style.width = newWidth + 'px';
         }
 
-        // --- New Company Picker Logic ---
         function pickCompany(selectElement) {
             const input = document.getElementById('receiver_name');
             input.value = selectElement.value;
@@ -230,10 +292,21 @@
             autoResize(input);
         }
 
-        // --- Date Logic ---
+        // --- Date Logic (หัวกระดาษ) ---
         function updateThaiDate() {
             const picker = document.getElementById('receipt_date_picker');
             const textDisplay = document.getElementById('receipt_date_text');
+            if(picker.value) {
+                const date = new Date(picker.value);
+                const thaiDate = date.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+                textDisplay.value = thaiDate;
+            } else { textDisplay.value = ""; }
+        }
+
+        // --- New Date Logic (วันที่เช็ค) ---
+        function updateCheckThaiDate() {
+            const picker = document.getElementById('check_date_picker');
+            const textDisplay = document.getElementById('check_date_text');
             if(picker.value) {
                 const date = new Date(picker.value);
                 const thaiDate = date.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -258,11 +331,6 @@
             if (clickedBox.checked) {
                 boxes.forEach(box => { if (box !== clickedBox) box.checked = false; });
             }
-            const checkOption = document.querySelector('input[value="เช็ค"]');
-            const el = document.getElementById('checkDetails');
-            if(checkOption && checkOption.checked) {
-                el.style.display = 'block'; el.classList.remove('no-print-bg');
-            } else { el.style.display = 'none'; }
         }
 
         function validateNumber(input) { input.value = input.value.replace(/[^0-9.]/g, ''); }
@@ -273,38 +341,160 @@
             if (isNaN(val)) { input.value = ''; return; }
             input.value = val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
+        
+        // ฟังก์ชันคำนวณและจัดการการแสดงผลคำอ่านตัวเลข
         function updateBahtTextFromInput(input) {
             let valStr = input.value.replace(/,/g, '');
+            const displayEl = document.getElementById('baht_text_display');
+            
             if(valStr) {
                 const text = ArabicNumberToText(valStr);
-                document.getElementById('baht_text_display').textContent = `(${text})`;
-            } else { document.getElementById('baht_text_display').textContent = '(.........)'; }
+                displayEl.textContent = `(${text})`;
+                // ถ้ามีข้อมูล ให้ลบ class no-print ออก (เพื่อให้พิมพ์ติด)
+                displayEl.classList.remove('no-print');
+            } else { 
+                displayEl.textContent = '(.........)';
+                // ถ้าไม่มีข้อมูล ให้ใส่ class no-print (เพื่อซ่อนตอนพิมพ์)
+                displayEl.classList.add('no-print');
+            }
         }
 
-        // --- Save & History ---
-        function saveReceipt(e) {
+        // ============================================
+        // 🚀 CUSTOMER MEMORY SYSTEM
+        // ============================================
+        
+        function saveCustomerToLocalDB(name, addressData) {
+            if(!name) return;
+            let customers = JSON.parse(localStorage.getItem('savedCustomers_v1') || '[]');
+            customers = customers.filter(c => c.name !== name);
+            customers.unshift({
+                name: name,
+                address: addressData.address,
+                subdistrict: addressData.subdistrict,
+                district: addressData.district,
+                province: addressData.province,
+                idCard: addressData.idCard
+            });
+            localStorage.setItem('savedCustomers_v1', JSON.stringify(customers));
+            loadSavedCustomers();
+        }
+
+        function loadSavedCustomers() {
+            const customers = JSON.parse(localStorage.getItem('savedCustomers_v1') || '[]');
+            const selectHelper = document.getElementById('customer_select_helper');
+            selectHelper.innerHTML = '<option value="" disabled selected>▼</option>';
+            customers.forEach(c => {
+                const option = document.createElement('option');
+                option.value = c.name;
+                option.textContent = c.name;
+                selectHelper.appendChild(option);
+            });
+        }
+
+        function pickCustomerFromSelect(selectElement) {
+            const input = document.getElementById('full_name');
+            input.value = selectElement.value;
+            checkAndFillCustomer(input);
+            selectElement.selectedIndex = 0;
+        }
+
+        function checkAndFillCustomer(input) {
+            const name = input.value;
+            const customers = JSON.parse(localStorage.getItem('savedCustomers_v1') || '[]');
+            const found = customers.find(c => c.name === name);
+
+            if (found) {
+                document.getElementById('address').value = found.address || '';
+                document.getElementById('subdistrict').value = found.subdistrict || '';
+                document.getElementById('district').value = found.district || '';
+                document.getElementById('province').value = found.province || '';
+                document.getElementById('id_card').value = found.idCard || '';
+            }
+        }
+
+        // ============================================
+        // 💾 SAVE DATA
+        // ============================================
+
+        function saveData(e) {
             e.preventDefault();
             const rawAmount = document.getElementById('amount').value.replace(/,/g, '');
+            const name = document.getElementById('full_name').value;
+            
+            if (!rawAmount) { alert('กรุณาระบุจำนวนเงิน'); return; }
+            if (!name) { alert('กรุณาระบุชื่อผู้จ่ายเงิน'); return; }
+
             const checkedBox = document.querySelector('input[name="payment_type"]:checked');
             const paymentType = checkedBox ? checkedBox.value : 'ไม่ระบุ';
+            
+            const addr = document.getElementById('address').value;
+            const sub = document.getElementById('subdistrict').value;
+            const dist = document.getElementById('district').value;
+            const prov = document.getElementById('province').value;
+            const idCard = document.getElementById('id_card').value;
+            const fullAddress = `${addr} ${sub ? 'ต.'+sub : ''} ${dist ? 'อ.'+dist : ''} ${prov ? 'จ.'+prov : ''}`;
+
+            saveCustomerToLocalDB(name, {
+                address: addr, subdistrict: sub, district: dist, province: prov, idCard: idCard
+            });
+
+            const checkDate = document.getElementById('check_date_text').value || '';
+            const checkNumber = document.getElementById('check_number').value || '';
+            const bankName = document.getElementById('bank_name').value || '';
+            const bankBranch = document.getElementById('bank_branch').value || '';
 
             const data = {
                 id: Date.now(),
                 date: document.getElementById('receipt_date_text').value,
-                name: document.getElementById('full_name').value || 'ไม่ระบุชื่อ',
+                name: name,
+                address: addr,
+                fullAddress: fullAddress, 
+                idCard: idCard,
+                paymentFor: document.getElementById('payment_for').value,
                 amount: rawAmount,
                 type: paymentType,
+                checkDetails: {
+                    bank: bankName, branch: bankBranch, number: checkNumber, date: checkDate
+                },
                 receiver: document.getElementById('receiver_name').value
             };
 
-            if (!data.amount) { alert('กรุณาระบุจำนวนเงิน'); return; }
+            document.getElementById('loadingOverlay').style.display = 'flex';
 
+            if(GOOGLE_SCRIPT_URL === 'VANG_URL_TEE_NEE' || GOOGLE_SCRIPT_URL === '') {
+                setTimeout(() => {
+                    saveToLocalHistory(data);
+                    document.getElementById('loadingOverlay').style.display = 'none';
+                    alert('✅ บันทึกข้อมูลลงเครื่องเรียบร้อย (ยังไม่ได้เชื่อม Google Sheet)');
+                    loadHistory();
+                }, 800);
+            } else {
+                fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                })
+                .then(() => {
+                    saveToLocalHistory(data);
+                    alert('✅ บันทึกข้อมูลสมบูรณ์ (ลง Google Sheet + เครื่อง)');
+                    document.getElementById('loadingOverlay').style.display = 'none';
+                    loadHistory();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    saveToLocalHistory(data);
+                    alert('⚠️ Google Sheet ขัดข้อง บันทึกลงเครื่องให้แทน');
+                    document.getElementById('loadingOverlay').style.display = 'none';
+                    loadHistory();
+                });
+            }
+        }
+
+        function saveToLocalHistory(data) {
             let history = JSON.parse(localStorage.getItem('myReceipts_v10') || '[]');
             history.unshift(data);
             localStorage.setItem('myReceipts_v10', JSON.stringify(history));
-            
-            alert('บันทึกเรียบร้อย!');
-            loadHistory();
         }
 
         function loadHistory() {
@@ -312,24 +502,26 @@
             const container = document.getElementById('historyList');
             if (history.length === 0) { container.innerHTML = '<p class="text-gray-400 text-center">ยังไม่มีประวัติ</p>'; return; }
             container.innerHTML = history.map(item => `
-                <div class="bg-white p-4 rounded shadow border-l-4 border-blue-500 flex justify-between items-center">
+                <div class="bg-white p-4 rounded shadow border-l-4 border-green-500 flex justify-between items-center">
                     <div>
                         <div class="font-bold text-gray-800">${item.name}</div>
                         <div class="text-sm text-gray-600">${item.date} | ${item.type}</div>
-                        <div class="text-xs text-gray-500 mt-1">รับโดย: ${item.receiver || '-'}</div>
+                        <div class="text-xs text-gray-500 mt-1">รายการ: ${item.paymentFor || '-'}</div>
                     </div>
-                    <div class="text-right"><div class="font-bold text-lg text-green-600">${parseFloat(item.amount).toLocaleString()} บ.</div><button onclick="deleteItem(${item.id})" class="text-xs text-red-500 hover:underline mt-1">ลบ</button></div>
+                    <div class="text-right">
+                        <div class="font-bold text-lg text-green-600">${parseFloat(item.amount).toLocaleString()} บ.</div>
+                    </div>
                 </div>
             `).join('');
         }
-        function deleteItem(id) {
-            if(!confirm('ยืนยันการลบ?')) return;
-            let history = JSON.parse(localStorage.getItem('myReceipts_v10') || '[]');
-            history = history.filter(item => item.id !== id);
-            localStorage.setItem('myReceipts_v10', JSON.stringify(history));
-            loadHistory();
+
+        function clearHistoryWithConfirm() {
+            if(confirm('⚠️ คำเตือน: คุณต้องการล้าง "ประวัติรายการทั้งหมด" ด้านล่างนี้ใช่หรือไม่?\n\n(ข้อมูลลูกค้าที่จำไว้ในช่องพิมพ์ชื่อ จะยังคงอยู่)')) {
+                localStorage.removeItem('myReceipts_v10');
+                loadHistory();
+                alert('✅ ล้างประวัติรายการเรียบร้อยแล้ว');
+            }
         }
-        function clearHistory() { if(confirm('ยืนยันลบประวัติทั้งหมด?')) { localStorage.removeItem('myReceipts_v10'); loadHistory(); } }
 
         function ArabicNumberToText(Number) {
             var Number = CheckNumber(Number);
